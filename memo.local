@@ -1,0 +1,93 @@
+from fastapi import FastAPI
+from pydantic import BaseModel, Field
+
+app = FastAPI(title="Simple Monthly Budget API (with Category)")
+
+# =========================
+# 入力データモデル
+# =========================
+class BudgetRequest(BaseModel):
+    user_name: str = Field(..., description="ユーザー名", min_length=1)
+    year: int = Field(..., ge=1900, le=2100, description="年")
+    month: int = Field(..., ge=1, le=12, description="月")
+    category: str = Field(..., description="カテゴリ（例: food, rent）", min_length=1)
+    amount: int = Field(..., ge=0, description="金額（整数）")
+
+
+# =========================
+# 簡易ストレージ（メモリ）
+# =========================
+# key = (user_name, year, month, category)
+targets: dict[tuple[str, int, int, str], int] = {}
+totals: dict[tuple[str, int, int, str], int] = {}
+
+
+def make_key(req: BudgetRequest) -> tuple[str, int, int, str]:
+    # category は "Food" と "food" を同一扱いにしたいなら lower() する
+    category = req.category.strip()
+    return (req.user_name, req.year, req.month, category)
+
+
+# =========================
+# 動作確認用
+# =========================
+@app.get("/")
+def health_check():
+    return {"status": "ok"}
+
+
+# =========================
+# 月×カテゴリごとの目標金額を設定
+# =========================
+@app.post("/set_target")
+def set_target(req: BudgetRequest):
+    key = make_key(req)
+    targets[key] = req.amount
+
+    return {
+        "message": "target saved",
+        "user_name": req.user_name,
+        "year": req.year,
+        "month": req.month,
+        "category": req.category,
+        "target": targets[key],
+    }
+
+
+# =========================
+# 月×カテゴリの支出を加算
+# =========================
+@app.post("/add_record")
+def add_record(req: BudgetRequest):
+    key = make_key(req)
+    totals[key] = totals.get(key, 0) + req.amount
+
+    return {
+        "message": "record added",
+        "user_name": req.user_name,
+        "year": req.year,
+        "month": req.month,
+        "category": req.category,
+        "added": req.amount,
+        "total": totals[key],
+    }
+
+
+# =========================
+# 月×カテゴリの合計支出を取得
+# =========================
+@app.post("/ask_total")
+def ask_total(req: BudgetRequest):
+    key = make_key(req)
+    total = totals.get(key, 0)
+    target = targets.get(key)
+
+    return {
+        "user_name": req.user_name,
+        "year": req.year,
+        "month": req.month,
+        "category": req.category,
+        "total": total,
+        "target": target,  # 未設定なら None
+        "remaining": (target - total) if target is not None else None,
+    }
