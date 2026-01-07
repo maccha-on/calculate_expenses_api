@@ -1,29 +1,30 @@
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
-from fastapi.responses import FileResponse
 
-app = FastAPI(title="Simple Monthly Budget API")
+app = FastAPI(title="Simple Monthly Budget API (with Category)")
 
 # =========================
 # 入力データモデル
 # =========================
 class BudgetRequest(BaseModel):
-    user_name: str = Field(..., description="ユーザー名")
+    user_name: str = Field(..., description="ユーザー名", min_length=1)
     year: int = Field(..., ge=1900, le=2100, description="年")
     month: int = Field(..., ge=1, le=12, description="月")
+    category: str = Field(..., description="カテゴリ（例: food, rent）", min_length=1)
     amount: int = Field(..., ge=0, description="金額（整数）")
 
 
 # =========================
 # 簡易ストレージ（メモリ）
 # =========================
-# key = (user_name, year, month)
-targets: dict[tuple[str, int, int], int] = {}
-totals: dict[tuple[str, int, int], int] = {}
+# key = (user_name, year, month, category)
+targets: dict[tuple[str, int, int, str], int] = {}
+totals: dict[tuple[str, int, int, str], int] = {}
 
 
-def make_key(req: BudgetRequest) -> tuple[str, int, int]:
-    return (req.user_name, req.year, req.month)
+def make_key(req: BudgetRequest) -> tuple[str, int, int, str]:
+    category = req.category.strip()
+    return (req.user_name, req.year, req.month, category)
 
 
 # =========================
@@ -31,11 +32,11 @@ def make_key(req: BudgetRequest) -> tuple[str, int, int]:
 # =========================
 @app.get("/")
 def health_check():
-    return {"status": "OK. The Monthly Budget API is running."}
+    return {"status": "ok"}
 
 
 # =========================
-# 月ごとの目標金額を設定
+# 月×カテゴリごとの目標金額を設定
 # =========================
 @app.post("/set_target")
 def set_target(req: BudgetRequest):
@@ -47,31 +48,32 @@ def set_target(req: BudgetRequest):
         "user_name": req.user_name,
         "year": req.year,
         "month": req.month,
+        "category": req.category,
         "target": targets[key],
     }
 
 
 # =========================
-# 月の支出を加算
+# 月×カテゴリの支出を加算
 # =========================
 @app.post("/add_record")
 def add_record(req: BudgetRequest):
     key = make_key(req)
-    current_total = totals.get(key, 0)
-    totals[key] = current_total + req.amount
+    totals[key] = totals.get(key, 0) + req.amount
 
     return {
         "message": "record added",
         "user_name": req.user_name,
         "year": req.year,
         "month": req.month,
+        "category": req.category,
         "added": req.amount,
         "total": totals[key],
     }
 
 
 # =========================
-# 月の合計支出を取得
+# 月×カテゴリの合計支出を取得
 # =========================
 @app.post("/ask_total")
 def ask_total(req: BudgetRequest):
@@ -83,13 +85,7 @@ def ask_total(req: BudgetRequest):
         "user_name": req.user_name,
         "year": req.year,
         "month": req.month,
+        "category": req.category,
         "total": total,
-        "target": target,
-        "remaining": (target - total) if target is not None else None,
+        "target": target,  # 未設定なら None
     }
-
-
-# おまじない: favicon.ico のリクエストに対応
-@app.get("/favicon.ico")
-def favicon():
-    return FileResponse("favicon.ico")
