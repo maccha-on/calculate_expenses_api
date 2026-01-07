@@ -23,6 +23,7 @@ totals: dict[tuple[str, int, int, str], int] = {}
 
 
 def make_key(req: BudgetRequest) -> tuple[str, int, int, str]:
+    # category は "Food" と "food" を同一扱いにしたいなら lower() する
     category = req.category.strip()
     return (req.user_name, req.year, req.month, category)
 
